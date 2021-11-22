@@ -19,5 +19,5 @@ diffusion:
 model:
   is_unconditional: 0
   timeemb: 128
-  crossemb: 16
+  featureemb: 16
   target_strategy: "random"
