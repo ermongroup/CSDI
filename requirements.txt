@@ -4,3 +4,4 @@ numpy
 tqdm
 pyyaml
 matplotlib
+wget

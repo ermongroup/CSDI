@@ -137,7 +137,7 @@ class PM25_Dataset(Dataset):
         return len(self.use_index)
 
 
-def get_dataloader(batch_size, validindex=0):
+def get_dataloader(batch_size, device, validindex=0):
     dataset = PM25_Dataset(mode="train", validindex=validindex)
     train_loader = DataLoader(
         dataset, batch_size=batch_size, num_workers=1, shuffle=True
@@ -151,7 +151,7 @@ def get_dataloader(batch_size, validindex=0):
         dataset_valid, batch_size=batch_size, num_workers=1, shuffle=False
     )
 
-    scaler = torch.from_numpy(dataset.train_std).cuda().float()
-    mean_scaler = torch.from_numpy(dataset.train_mean).cuda().float()
+    scaler = torch.from_numpy(dataset.train_std).to(device).float()
+    mean_scaler = torch.from_numpy(dataset.train_mean).to(device).float()
 
     return train_loader, valid_loader, test_loader, scaler, mean_scaler

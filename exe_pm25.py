@@ -45,7 +45,7 @@ with open(foldername + "config.json", "w") as f:
     json.dump(config, f, indent=4)
 
 train_loader, valid_loader, test_loader, scaler, mean_scaler = get_dataloader(
-    config["train"]["batch_size"], validindex=args.validationindex
+    config["train"]["batch_size"], device=args.device, validindex=args.validationindex
 )
 model = CSDI_PM25(config, args.device).to(args.device)
 
