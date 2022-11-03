@@ -12,7 +12,26 @@ if sys.argv[1] == "physio":
     url = "https://physionet.org/files/challenge-2012/1.0.0/set-a.tar.gz?download"
     wget.download(url, out="data")
     with tarfile.open("data/set-a.tar.gz", "r:gz") as t:
-        t.extractall(path="data/physio")
+        def is_within_directory(directory, target):
+            
+            abs_directory = os.path.abspath(directory)
+            abs_target = os.path.abspath(target)
+        
+            prefix = os.path.commonprefix([abs_directory, abs_target])
+            
+            return prefix == abs_directory
+        
+        def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+        
+            for member in tar.getmembers():
+                member_path = os.path.join(path, member.name)
+                if not is_within_directory(path, member_path):
+                    raise Exception("Attempted Path Traversal in Tar File")
+        
+            tar.extractall(path, members, numeric_owner=numeric_owner) 
+            
+        
+        safe_extract(t, path="data/physio")
 
 elif sys.argv[1] == "pm25":
     url = "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/06/STMVL-Release.zip"
