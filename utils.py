@@ -10,7 +10,7 @@ def train(
     config,
     train_loader,
     valid_loader=None,
-    valid_epoch_interval=5,
+    valid_epoch_interval=20,
     foldername="",
 ):
     optimizer = Adam(model.parameters(), lr=config["lr"], weight_decay=1e-6)
@@ -42,6 +42,9 @@ def train(
                     },
                     refresh=False,
                 )
+                if batch_no >= config["itr_per_epoch"]:
+                    break
+
             lr_scheduler.step()
         if valid_loader is not None and (epoch_no + 1) % valid_epoch_interval == 0:
             model.eval()
@@ -82,6 +85,7 @@ def calc_denominator(target, eval_points):
 
 
 def calc_quantile_CRPS(target, forecast, eval_points, mean_scaler, scaler):
+
     target = target * scaler + mean_scaler
     forecast = forecast * scaler + mean_scaler
 
@@ -97,6 +101,21 @@ def calc_quantile_CRPS(target, forecast, eval_points, mean_scaler, scaler):
         CRPS += q_loss / denom
     return CRPS.item() / len(quantiles)
 
+def calc_quantile_CRPS_sum(target, forecast, eval_points, mean_scaler, scaler):
+
+    eval_points = eval_points.mean(-1)
+    target = target * scaler + mean_scaler
+    target = target.sum(-1)
+    forecast = forecast * scaler + mean_scaler
+
+    quantiles = np.arange(0.05, 1.0, 0.05)
+    denom = calc_denominator(target, eval_points)
+    CRPS = 0
+    for i in range(len(quantiles)):
+        q_pred = torch.quantile(forecast.sum(-1),quantiles[i],dim=1)
+        q_loss = quantile_loss(target, q_pred, quantiles[i], eval_points)
+        CRPS += q_loss / denom
+    return CRPS.item() / len(quantiles)
 
 def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldername=""):
 
@@ -173,6 +192,9 @@ def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldernam
             CRPS = calc_quantile_CRPS(
                 all_target, all_generated_samples, all_evalpoint, mean_scaler, scaler
             )
+            CRPS_sum = calc_quantile_CRPS_sum(
+                all_target, all_generated_samples, all_evalpoint, mean_scaler, scaler
+            )
 
             with open(
                 foldername + "/result_nsample" + str(nsample) + ".pk", "wb"
@@ -188,3 +210,4 @@ def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldernam
                 print("RMSE:", np.sqrt(mse_total / evalpoints_total))
                 print("MAE:", mae_total / evalpoints_total)
                 print("CRPS:", CRPS)
+                print("CRPS_sum:", CRPS_sum)

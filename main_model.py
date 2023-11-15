@@ -79,6 +79,10 @@ class CSDI_base(nn.Module):
                 cond_mask[i] = cond_mask[i] * for_pattern_mask[i - 1] 
         return cond_mask
 
+    def get_test_pattern_mask(self, observed_mask, test_pattern_mask):
+        return observed_mask * test_pattern_mask
+
+
     def get_side_info(self, observed_tp, cond_mask):
         B, K, L = cond_mask.shape
 
@@ -281,3 +285,133 @@ class CSDI_Physio(CSDI_base):
             for_pattern_mask,
             cut_length,
         )
+
+
+
+class CSDI_Forecasting(CSDI_base):
+    def __init__(self, config, device, target_dim):
+        super(CSDI_Forecasting, self).__init__(target_dim, config, device)
+        self.target_dim_base = target_dim
+        self.num_sample_features = config["model"]["num_sample_features"]
+
+    def process_data(self, batch):
+        observed_data = batch["observed_data"].to(self.device).float()
+        observed_mask = batch["observed_mask"].to(self.device).float()
+        observed_tp = batch["timepoints"].to(self.device).float()
+        gt_mask = batch["gt_mask"].to(self.device).float()
+
+        observed_data = observed_data.permute(0, 2, 1)
+        observed_mask = observed_mask.permute(0, 2, 1)
+        gt_mask = gt_mask.permute(0, 2, 1)
+
+        cut_length = torch.zeros(len(observed_data)).long().to(self.device)
+        for_pattern_mask = observed_mask
+
+        feature_id=torch.arange(self.target_dim_base).unsqueeze(0).expand(observed_data.shape[0],-1).to(self.device)
+
+        return (
+            observed_data,
+            observed_mask,
+            observed_tp,
+            gt_mask,
+            for_pattern_mask,
+            cut_length,
+            feature_id, 
+        )        
+
+    def sample_features(self,observed_data, observed_mask,feature_id,gt_mask):
+        size = self.num_sample_features
+        self.target_dim = size
+        extracted_data = []
+        extracted_mask = []
+        extracted_feature_id = []
+        extracted_gt_mask = []
+        
+        for k in range(len(observed_data)):
+            ind = np.arange(self.target_dim_base)
+            np.random.shuffle(ind)
+            extracted_data.append(observed_data[k,ind[:size]])
+            extracted_mask.append(observed_mask[k,ind[:size]])
+            extracted_feature_id.append(feature_id[k,ind[:size]])
+            extracted_gt_mask.append(gt_mask[k,ind[:size]])
+        extracted_data = torch.stack(extracted_data,0)
+        extracted_mask = torch.stack(extracted_mask,0)
+        extracted_feature_id = torch.stack(extracted_feature_id,0)
+        extracted_gt_mask = torch.stack(extracted_gt_mask,0)
+        return extracted_data, extracted_mask,extracted_feature_id, extracted_gt_mask
+
+
+    def get_side_info(self, observed_tp, cond_mask,feature_id=None):
+        B, K, L = cond_mask.shape
+
+        time_embed = self.time_embedding(observed_tp, self.emb_time_dim)  # (B,L,emb)
+        time_embed = time_embed.unsqueeze(2).expand(-1, -1, self.target_dim, -1)
+
+        if self.target_dim == self.target_dim_base:
+            feature_embed = self.embed_layer(
+                torch.arange(self.target_dim).to(self.device)
+            )  # (K,emb)
+            feature_embed = feature_embed.unsqueeze(0).unsqueeze(0).expand(B, L, -1, -1)
+        else:
+            feature_embed = self.embed_layer(feature_id).unsqueeze(1).expand(-1,L,-1,-1)
+        side_info = torch.cat([time_embed, feature_embed], dim=-1)  # (B,L,K,*)
+        side_info = side_info.permute(0, 3, 2, 1)  # (B,*,K,L)
+
+        if self.is_unconditional == False:
+            side_mask = cond_mask.unsqueeze(1)  # (B,1,K,L)
+            side_info = torch.cat([side_info, side_mask], dim=1)
+
+        return side_info
+
+    def forward(self, batch, is_train=1):
+        (
+            observed_data,
+            observed_mask,
+            observed_tp,
+            gt_mask,
+            _,
+            _,
+            feature_id, 
+        ) = self.process_data(batch)
+        if is_train == 1 and (self.target_dim_base > self.num_sample_features):
+            observed_data, observed_mask,feature_id,gt_mask = \
+                    self.sample_features(observed_data, observed_mask,feature_id,gt_mask)
+        else:
+            self.target_dim = self.target_dim_base
+            feature_id = None
+
+        if is_train == 0:
+            cond_mask = gt_mask
+        else: #test pattern
+            cond_mask = self.get_test_pattern_mask(
+                observed_mask, gt_mask
+            )
+
+        side_info = self.get_side_info(observed_tp, cond_mask, feature_id)
+
+        loss_func = self.calc_loss if is_train == 1 else self.calc_loss_valid
+
+        return loss_func(observed_data, cond_mask, observed_mask, side_info, is_train)
+
+
+
+    def evaluate(self, batch, n_samples):
+        (
+            observed_data,
+            observed_mask,
+            observed_tp,
+            gt_mask,
+            _,
+            _,
+            feature_id, 
+        ) = self.process_data(batch)
+
+        with torch.no_grad():
+            cond_mask = gt_mask
+            target_mask = observed_mask * (1-gt_mask)
+
+            side_info = self.get_side_info(observed_tp, cond_mask)
+
+            samples = self.impute(observed_data, cond_mask, side_info, n_samples)
+
+        return samples, observed_data, target_mask, observed_mask, observed_tp

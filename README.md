@@ -15,6 +15,9 @@ python download.py physio
 python download.py pm25
 ```
 
+### Download the elecricity dataset 
+Please put files in [GoogleDrive](https://drive.google.com/drive/folders/1krZQofLdeQrzunuKkLXy8L_kMzQrVFI_?usp=drive_link) to the "data" folder.
+
 ## Experiments 
 
 ### training and imputation for the healthcare dataset
@@ -30,6 +33,11 @@ python exe_physio.py --modelfolder pretrained --testmissingratio [missing ratio]
 ### training and imputation for the healthcare dataset
 ```shell
 python exe_pm25.py --nsample [number of samples]
+```
+
+### training and forecasting for the electricity dataset
+```shell
+python exe_forecasting.py --datatype electricity --nsample [number of samples]
 ```
 
 ### Visualize results
