@@ -57,7 +57,7 @@ if args.modelfolder == "":
     )
 else:
     model.load_state_dict(torch.load("./save/" + args.modelfolder + "/model.pth"))
-
+model.target_dim = target_dim
 evaluate(
     model,
     test_loader,
